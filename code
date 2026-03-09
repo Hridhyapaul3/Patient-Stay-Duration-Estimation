@@ -1,0 +1,74 @@
+Start Spark Session spark = SparkSession.builder.appName("HospitalStayLinearReg").getOrCreate() 
+ 
+Load Dataset 
+data = spark.read.csv("C:/Users/hp/Desktop/model.csv", header=True, inferSchema=True) print(" Data loaded successfully!") data.printSchema() 
+ 
+Clean & Convert Columns numeric_cols = ["Length of Stay", "Total Charges", "Total Costs"] 
+ 
+for col_name in numeric_cols:     data = data.withColumn(col_name, regexp_replace(col(col_name), "[^0-9.]", ""))     data = data.withColumn(col_name, col(col_name).cast("double")) 
+ 
+# Drop rows with null or zero values in key numeric columns data = data.filter( 
+    (col("Length of Stay").isNotNull()) & (col("Length of Stay") > 0) & 
+    (col("Total Charges").isNotNull()) & (col("Total Costs").isNotNull()) 
+) 
+ 
+print(f" Cleaned Data Count: {data.count()}") data.printSchema() 
+ 
+  Select Features categorical_cols = [ 
+    "Age Group", "Gender", "Race", "Ethnicity", 
+    "Type of Admission", "APR Severity of Illness Description", 
+    "APR Risk of Mortality", "APR Medical Surgical Description",     "Emergency Department Indicator" 
+] 
+ 
+numeric_features = ["Total Charges", "Total Costs"] 
+ 
+ Index Categorical Columns indexers = [ 
+    StringIndexer(inputCol=c, outputCol=c + "_index", handleInvalid="keep") 
+    for c in categorical_cols 
+] 
+ 
+indexed_features = [c + "_index" for c in categorical_cols] feature_cols = indexed_features + numeric_features 
+ 
+Feature Assembler + Standardization assembler = VectorAssembler(inputCols=feature_cols, outputCol="features") 
+scaler = StandardScaler(inputCol="features", outputCol="scaledFeatures", withMean=True, withStd=True) 
+ Define Linear Regression Model lr = LinearRegression(     featuresCol="scaledFeatures",     labelCol="Length of Stay",     regParam=0.3,     elasticNetParam=0.5 
+)  
+Build Pipeline pipeline = Pipeline(stages=indexers + [assembler, scaler, lr]) 
+ 
+Train-Test Split 
+train_data, test_data = data.randomSplit([0.9, 0.1], seed=42) print(f"Train Records: {train_data.count()}, Test Records: {test_data.count()}") 
+ 
+Train the Model model = pipeline.fit(train_data) print("Linear Regression Model Trained Successfully!") 
+ 
+Make Predictions 
+predictions = model.transform(test_data) 
+predictions.select("Length of Stay", "prediction", "Total Charges", "Total Costs").show(10, truncate=False) 
+ 
+Evaluate Model Performance 
+ 
+evaluator_rmse = RegressionEvaluator(     labelCol="Length of Stay",     predictionCol="prediction",     metricName="rmse" 
+) 
+evaluator_r2 = RegressionEvaluator(     labelCol="Length of Stay",     predictionCol="prediction",     metricName="r2" 
+) 
+evaluator_mae = RegressionEvaluator(     labelCol="Length of Stay",     predictionCol="prediction",     metricName="mae" 
+) 
+ 
+rmse = evaluator_rmse.evaluate(predictions) mae = evaluator_mae.evaluate(predictions) r2 = evaluator_r2.evaluate(predictions) 
+ 
+print("\n Model Evaluation Results:") print(f" RMSE (Root Mean Squared Error): {rmse:.3f}") print(f" MAE  (Mean Absolute Error):     {mae:.3f}") print(f" R²   (Coefficient of Determination): {r2:.3f}") Visualize Actual vs Predicted Hospital Stay Durations import matplotlib.pyplot as plt import seaborn as sns 
+ 
+# Collect predictions from Spark to Pandas pred_df = predictions.select("Length of Stay", "prediction").toPandas() 
+ 
+# Optional: limit to 1000 rows for faster plotting pred_df = pred_df.sample(n=min(1000, len(pred_df)), random_state=42) 
+ 
+# Create scatter plot plt.figure(figsize=(8, 6)) sns.scatterplot(x="Length of Stay", y="prediction", data=pred_df, alpha=0.6) 
+ 
+# Add diagonal line (perfect prediction) 
+max_val = max(pred_df["Length of Stay"].max(), pred_df["prediction"].max()) plt.plot([0, max_val], [0, max_val], 'r--', linewidth=2, label="Perfect Prediction") 
+ 
+plt.title("Actual vs Predicted Hospital Stay Durations", fontsize=14) plt.xlabel("Actual Length of Stay (days)") plt.ylabel("Predicted Length of Stay (days)") plt.legend() plt.grid(True, linestyle="--", alpha=0.6) plt.show() 
+ 
+ 
+ 	 
+ 
+output screensho
